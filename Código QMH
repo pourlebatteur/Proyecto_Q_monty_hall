@@ -1,0 +1,155 @@
+from qiskit.primitives import StatevectorSampler, PrimitiveJob
+from qiskit.quantum_info import Statevector
+from qiskit import *
+from qiskit import QuantumCircuit, QuantumRegister
+from qiskit_aer import AerSimulator, QasmSimulator
+from qiskit.visualization import plot_bloch_multivector, plot_histogram, plot_state_qsphere
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Función para establecer probabilidades iguales
+def setEqualProbabilities(circuit, quantumRegister):
+    q = quantumRegister
+    circuit.ry(2*np.arccos(1/(np.sqrt(3))), q[1])
+    circuit.ch(q[1], q[2])
+    circuit.swap(q[0], q[2])
+    circuit.x(q[0])
+    circuit.x(q[1])
+    circuit.x(q[2])
+    circuit.ccx(q[0], q[1], q[2])
+    circuit.cx(q[0], q[1])
+    circuit.x(q[1])
+
+# Función para la elección de la puerta que abrirá Monty
+def chooseDoorToOpen(circuit, doors, choices, monty):
+    def cch(circuit, control0, control1, target):
+
+        circuit.ry(np.pi / 4, target)
+        circuit.ccx(control0, control1, target)
+        circuit.ry(-np.pi / 4, target)
+
+
+    # Negación antes de cada Toffoli
+    circuit.x(doors[0])
+    circuit.x(choices[0])
+    cch(circuit, doors[0], choices[0], monty[0])
+    circuit.x(doors[0])
+    circuit.x(choices[0])
+    
+    circuit.x(doors[0])
+    circuit.x(choices[1])
+    circuit.ccx(doors[0], choices[1], monty[0])
+    circuit.x(doors[0])
+    circuit.x(choices[1])
+    
+    circuit.x(doors[1])
+    circuit.x(choices[1])
+    cch(circuit, doors[1], choices[1], monty[0])
+    circuit.x(doors[1])
+    circuit.x(choices[1])
+    
+    circuit.x(doors[1])
+    circuit.x(choices[2])
+    circuit.ccx(doors[1], choices[2], monty[0])
+    circuit.x(doors[1])
+    circuit.x(choices[2])
+    
+    circuit.x(doors[2])
+    circuit.x(choices[0])
+    circuit.ccx(doors[2], choices[0], monty[0])
+    circuit.x(doors[2])
+    circuit.x(choices[0])
+    
+    circuit.x(doors[2])
+    circuit.x(choices[2])
+    cch(circuit, doors[2], choices[2], monty[0])
+    circuit.x(doors[2])
+    circuit.x(choices[2])
+
+# Función para el cambio de elección del concursante
+def shift(circuit, quantumRegister):
+    circuit.swap(quantumRegister[0], quantumRegister[2])
+    circuit.swap(quantumRegister[2], quantumRegister[1])
+
+def cshift(control, circuit, quantumRegister):
+    circuit.cswap(control, quantumRegister[0], quantumRegister[2])
+    circuit.cswap(control, quantumRegister[2], quantumRegister[1])
+
+
+doors = QuantumRegister(3, 'doors')
+choices = QuantumRegister(3, 'choices')
+monty = QuantumRegister(1, 'monty')
+c = ClassicalRegister(6, 'c')
+
+circuit = QuantumCircuit(doors, choices, monty, c)
+
+setEqualProbabilities(circuit, doors)
+setEqualProbabilities(circuit, choices)
+
+chooseDoorToOpen(circuit, doors, choices, monty)
+
+shift(circuit, choices)
+cshift(monty[0], circuit, choices)
+
+circuit.measure(range(6), range(6))
+print(circuit.draw(output='text'))
+
+
+
+backend = QasmSimulator()
+transpiled_circuit = transpile(circuit, backend)
+job = backend.run(transpiled_circuit, shots=100000)
+result = job.result()
+counts = result.get_counts()
+plot_histogram(counts)
+
+
+
+def validateCounts(counts):
+    stats = {'win': 1, 'loose': 1}
+    for key in counts:
+        doorString = key[0:3]
+        choiceString = key[3:]
+
+        door = doorString.find('0')
+        if door == -1:
+            raise ValueError('No winning door')
+        if doorString.find('0', door + 1) != -1:
+            raise ValueError('More than one winning door')
+
+        choice = choiceString.find('0')
+        if choice == -1:
+            raise ValueError('No choice')
+        if choiceString.find('0', choice + 1) != -1:
+            raise ValueError('More than one choice')
+
+        if door == choice:
+            stats['win'] += counts[key]
+        else:
+            stats['loose'] += counts[key]
+
+    return stats
+
+# Obtener los conteos del resultado
+counts = result.get_counts()
+
+# Validar los conteos
+simulationResult = validateCounts(counts)
+
+# Crear el histograma
+hist = plot_histogram(simulationResult, figsize=(10, 5))
+
+# Personalizar el histograma para agregar los conteos y porcentajes
+total_counts = sum(simulationResult.values())
+bars = hist.patches
+
+for bar, count in zip(bars, simulationResult.values()):
+    height = bar.get_height()
+    percentage = (count / total_counts) * 100
+    hist.text(bar.get_x() + bar.get_width() / 2, height, f'{count}\n({percentage:.2f}%)', ha='center', va='bottom')
+
+# Mostrar el histograma
+plt.show()
+
+# Guardar el histograma como imagen
+hist.figure.savefig('histogram.png')
