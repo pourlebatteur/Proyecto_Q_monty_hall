@@ -1,3 +1,7 @@
+!pip install qiskit ipywidgets
+!pip install qiskit-aer
+
+
 from qiskit.primitives import StatevectorSampler, PrimitiveJob
 from qiskit.quantum_info import Statevector
 from qiskit import *
