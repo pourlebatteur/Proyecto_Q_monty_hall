@@ -1,0 +1,65 @@
+import pennylane as qml
+from pennylane import numpy as np
+import matplotlib.pyplot as plt
+
+
+# Definición del dispositivo
+dev = qml.device('default.qubit', wires=7, shots=100000)
+
+@qml.qnode(dev)
+def create_circuit():
+    # Aplicación de puertas para establecer probabilidades iguales
+    def set_equal_probabilities(wires):
+        qml.RY(2 * np.arccos(1 / np.sqrt(3)), wires=wires[1])
+        qml.CRY(np.pi, wires=[wires[1], wires[2]])
+        qml.SWAP(wires=[0,2])
+        qml.PauliX(wires[0])
+        qml.PauliX(wires[1])
+        qml.PauliX(wires[2])
+        qml.Toffoli(wires=[0,1,2])
+        qml.CNOT(wires=[0,1])
+        qml.PauliX(wires[1])
+
+    def choose_door_to_open(wires):
+        def cch(wires):
+            qml.RY(np.pi / 4, wires[2])
+            qml.Toffoli(wires=[0,1,2])
+            qml.RY(-np.pi / 4, wires[2])
+        
+        # Aplicación de las puertas cuánticas para elección de Monty
+        for (d, c) in [(0, 0), (0, 1), (1, 1), (1, 2), (2, 0), (2, 2)]:
+            qml.PauliX(wires[d])
+            qml.PauliX(wires[c])
+            if (d == 0 and c == 0) or (d == 1 and c == 1) or (d == 2 and c == 2):
+                cch([wires[d], wires[c], wires[6]])
+            else:
+                qml.Toffoli(wires=[d,c,6])
+            qml.PauliX(wires[d])
+            qml.PauliX(wires[c])
+
+    def shift(wires):
+        qml.SWAP(wires=[0,2])
+        qml.SWAP(wires=[2,1])
+
+    def cshift(control, wires):
+        qml.CSWAP(wires=[control,0,2])
+        qml.CSWAP(wires=[control,2,1])
+
+    # Registro cuántico
+    doors = [0, 1, 2]
+    choices = [3, 4, 5]
+    monty = [6]
+
+    # Crear el circuito
+    set_equal_probabilities(doors)
+    set_equal_probabilities(choices)
+    choose_door_to_open(doors + choices + monty)
+    shift(choices)
+    cshift(monty[0], choices)
+    
+    return qml.probs(wires=range(7)) #qml.expval(qml.PauliZ(0))  # Solo para finalizar el QNode
+
+
+# Visualización del circuito en texto
+print(qml.draw(create_circuit)())
+
